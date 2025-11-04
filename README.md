@@ -11,10 +11,6 @@
 
 ![EchoFlow 界面预览](image.png)
 
-## GitHub Star 趋势
-
-![Star History Chart](https://api.star-history.com/svg?repos=hzw-object/EchoFlow&type=Date)
-
 ## 功能特性
 
 - 🚀 **流式 LLM 处理**：支持 GPT、Qwen、vLLM 等模型
@@ -223,4 +219,8 @@ tts_engine = EdgeTTSRealtime(voice="zh-CN-XiaoxiaoNeural")
 ## 许可证
 
 MIT License
+
+## GitHub Star 趋势
+
+![Star History Chart](https://api.star-history.com/svg?repos=hzw-object/EchoFlow&type=Date)
 
