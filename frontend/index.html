@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EchoFlow - 实时语音合成</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎙️ EchoFlow</h1>
+            <p class="subtitle">实时语音合成系统</p>
+        </header>
+
+        <main>
+            <div class="input-section">
+                <label for="user-input">输入文字：</label>
+                <textarea 
+                    id="user-input" 
+                    placeholder="请输入您想要转换为语音的文字..."
+                    rows="4"
+                ></textarea>
+                <div class="button-group">
+                    <button id="send-btn" class="btn btn-primary">发送</button>
+                    <button id="stop-btn" class="btn btn-secondary" disabled>停止</button>
+                    <button id="clear-btn" class="btn btn-outline">清空</button>
+                </div>
+            </div>
+
+            <div class="status-section">
+                <div id="status" class="status">等待输入...</div>
+                <div id="connection-status" class="connection-status">
+                    <span class="status-dot"></span>
+                    <span>未连接</span>
+                </div>
+                <div id="latency-info" class="latency-info">
+                    <div class="latency-item">
+                        <span class="latency-label">首字延迟:</span>
+                        <span id="first-text-latency" class="latency-value">-</span>
+                    </div>
+                    <div class="latency-item">
+                        <span class="latency-label">首音延迟:</span>
+                        <span id="first-audio-latency" class="latency-value">-</span>
+                    </div>
+                    <div class="latency-item">
+                        <span class="latency-label">总延迟:</span>
+                        <span id="total-latency" class="latency-value">-</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="audio-section">
+                <label>音频播放：</label>
+                <audio id="audio-player" controls></audio>
+                <div id="audio-info" class="audio-info"></div>
+            </div>
+
+            <div class="log-section">
+                <label>日志：</label>
+                <div id="log-container" class="log-container"></div>
+            </div>
+        </main>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
+

@@ -1,0 +1,29 @@
+# EchoFlow 实时语音合成系统依赖
+
+# Web 框架
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+websockets>=12.0
+
+# LLM 客户端
+openai>=1.3.0
+
+# 语音合成
+# TTS 库（可选，推荐使用）
+# TTS>=0.20.0
+
+# Edge-TTS（可选，免费替代方案）
+# edge-tts>=6.1.0
+
+# Piper TTS（本地快速TTS，推荐）
+piper-tts>=1.3.0  # Piper TTS Python 包（包含 onnxruntime）
+onnxruntime>=1.16.0  # ONNX 运行时，用于加载 Piper 模型
+# 如果需要 GPU 加速，使用: onnxruntime-gpu>=1.16.0（替换 onnxruntime）
+
+# 音频处理
+numpy>=1.24.0
+scipy>=1.11.0
+
+# 工具库
+python-dotenv>=1.0.0
+
