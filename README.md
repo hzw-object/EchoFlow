@@ -1,6 +1,19 @@
 # EchoFlow - 实时语音合成系统
 
+![GitHub stars](https://img.shields.io/github/stars/hzw-object/EchoFlow?style=social)
+![GitHub forks](https://img.shields.io/github/forks/hzw-object/EchoFlow?style=social)
+![GitHub issues](https://img.shields.io/github/issues/hzw-object/EchoFlow)
+![GitHub license](https://img.shields.io/github/license/hzw-object/EchoFlow)
+
 一个基于流式 LLM 和 RealtimeTTS 的实时语音合成系统，支持边生成边播放。
+
+## 预览
+
+![EchoFlow 界面预览](image.png)
+
+## GitHub Star 趋势
+
+![Star History Chart](https://api.star-history.com/svg?repos=hzw-object/EchoFlow&type=Date)
 
 ## 功能特性
 
