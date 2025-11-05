@@ -40,6 +40,12 @@ models/
 *.pth
 *.onnx
 
+# CosyVoice 仓库和模型（11GB+，不提交）
+CosyVoice/
+
+# ChatTTS 旧模型文件（已删除）
+asset/
+
 # 测试
 .pytest_cache/
 .coverage

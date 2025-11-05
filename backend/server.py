@@ -28,8 +28,18 @@ else:
     if os.path.exists(venv_path) and venv_path not in sys.path:
         sys.path.insert(0, venv_path)
 
+# 添加 CosyVoice 和 Matcha-TTS 路径
+script_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(script_dir)
+cosyvoice_path = os.path.join(project_root, 'CosyVoice')
+matcha_path = os.path.join(project_root, 'CosyVoice', 'third_party', 'Matcha-TTS')
+if os.path.exists(cosyvoice_path) and cosyvoice_path not in sys.path:
+    sys.path.insert(0, cosyvoice_path)
+if os.path.exists(matcha_path) and matcha_path not in sys.path:
+    sys.path.insert(0, matcha_path)
+
 from llm_stream import LLMStreamer, DeepSeekStreamer
-from realtime_tts import RealtimeTTS, EdgeTTSRealtime, PiperTTSRealtime
+from realtime_tts import RealtimeTTS, EdgeTTSRealtime, PiperTTSRealtime, CosyVoiceRealtime
 from config import config
 
 # 配置日志
@@ -71,11 +81,27 @@ else:
     )
 
 # 初始化 TTS 引擎
-# 根据配置选择 TTS 引擎：piper（本地快速）、edge（云端）、coqui（本地）
+# 根据配置选择 TTS 引擎：cosyvoice（阿里通义，最佳音质）、edge（云端，音质好）、piper（本地快速）、coqui（本地）
 tts_engine = None
 tts_engine_name = config.TTS_ENGINE.lower()
 
-if tts_engine_name == "piper":
+if tts_engine_name == "cosyvoice":
+    # 使用 CosyVoice（阿里巴巴通义实验室，最佳音质，超低延迟）
+    try:
+        tts_engine = CosyVoiceRealtime(
+            model_dir=config.COSYVOICE_MODEL_DIR,
+            sample_rate=config.COSYVOICE_SAMPLE_RATE,
+            use_gpu=config.COSYVOICE_USE_GPU,
+            speaker=config.COSYVOICE_SPEAKER,
+        )
+        logger.info(f"✅ CosyVoice 初始化成功: model={config.COSYVOICE_MODEL_DIR}, sample_rate={config.COSYVOICE_SAMPLE_RATE}, gpu={config.COSYVOICE_USE_GPU}, speaker={config.COSYVOICE_SPEAKER}")
+    except Exception as e:
+        logger.warning(f"CosyVoice 初始化失败: {e}，尝试使用 Edge-TTS")
+        import traceback
+        logger.debug(f"详细错误: {traceback.format_exc()}")
+        tts_engine = None
+
+if tts_engine is None and tts_engine_name == "piper":
     # 使用 Piper TTS（本地快速）
     try:
         tts_engine = PiperTTSRealtime(
@@ -96,7 +122,7 @@ if tts_engine_name == "piper":
         logger.debug(f"详细错误: {traceback.format_exc()}")
         tts_engine = None
 
-if tts_engine is None and (tts_engine_name == "edge" or tts_engine_name == "piper"):
+if tts_engine is None and (tts_engine_name == "edge" or tts_engine_name == "piper" or tts_engine_name == "cosyvoice"):
     # 使用 Edge-TTS（云端，免费，无需下载模型）
     try:
         tts_engine = EdgeTTSRealtime(
@@ -148,35 +174,77 @@ async def websocket_chat(websocket: WebSocket):
             
             if message.get("type") == "text":
                 user_text = message.get("text", "")
-                logger.info(f"收到用户输入: {user_text[:50]}...")
+                print(f"\n{'='*80}")
+                print(f"📝 收到用户输入: {user_text[:50]}...")
+                print(f"{'='*80}\n")
                 
                 # 记录接收消息的时间（用于计算首字延迟）
                 receive_time = int(time.time() * 1000)
                 
+                # 累积 LLM 生成的完整文本
+                llm_full_response = []
+                chunk_count = 0
+                
                 # 流式 LLM 处理（低延迟模式）
                 first_text_chunk = True
-                async for text_chunk in llm_streamer.stream(user_text):
-                    if text_chunk:
-                        # 记录首字延迟（发送第一个文本块的时间）
-                        if first_text_chunk:
-                            # 计算首字延迟（从接收消息到生成第一个文本块）
-                            first_text_time = int(time.time() * 1000)
-                            first_text_latency = first_text_time - receive_time
+                try:
+                    async for text_chunk in llm_streamer.stream(user_text):
+                        if text_chunk:
+                            # 累积文本块
+                            llm_full_response.append(text_chunk)
+                            chunk_count += 1
                             
-                            # 发送首字延迟标记（包含服务器端计算的首字延迟）
-                            await websocket.send_json({
-                                "type": "first_text",
-                                "timestamp": first_text_time,
-                                "receive_time": receive_time,
-                                "latency": first_text_latency
-                            })
-                            first_text_chunk = False
-                        
-                        # RealtimeTTS 生成音频（立即发送，不等待完整句子）
-                        async for audio_chunk in tts_engine.synthesize_stream(text_chunk):
-                            # 立即发送音频数据到客户端（降低延迟）
-                            await websocket.send_bytes(audio_chunk)
-                            # 不添加延迟，让数据流尽快传输
+                            # 记录首字延迟（发送第一个文本块的时间）
+                            if first_text_chunk:
+                                # 计算首字延迟（从接收消息到生成第一个文本块）
+                                first_text_time = int(time.time() * 1000)
+                                first_text_latency = first_text_time - receive_time
+                                
+                                # 发送首字延迟标记（包含服务器端计算的首字延迟）
+                                await websocket.send_json({
+                                    "type": "first_text",
+                                    "timestamp": first_text_time,
+                                    "receive_time": receive_time,
+                                    "latency": first_text_latency
+                                })
+                                first_text_chunk = False
+                            
+                            # RealtimeTTS 生成音频（立即发送，不等待完整句子）
+                            audio_chunk_count = 0
+                            async for audio_chunk in tts_engine.synthesize_stream(text_chunk):
+                                # 立即发送音频数据到客户端（降低延迟）
+                                audio_chunk_count += 1
+                                await websocket.send_bytes(audio_chunk)
+                                logger.debug(f"📤 已发送音频块 #{audio_chunk_count}: {len(audio_chunk)} 字节")
+                                # 不添加延迟，让数据流尽快传输
+                            
+                            if audio_chunk_count > 0:
+                                logger.info(f"✅ 文本块合成完成，共发送 {audio_chunk_count} 个音频块")
+                
+                except Exception as llm_error:
+                    print(f"❌ LLM 生成过程中发生错误: {llm_error}")
+                    import traceback
+                    traceback.print_exc()
+                
+                # 记录 LLM 完整生成结果（一定要执行，即使有错误）
+                full_response_text = "".join(llm_full_response)
+                
+                print("\n" + "=" * 80)
+                print(f"✅ LLM 生成完成")
+                print(f"📊 统计信息:")
+                print(f"   - 文本块数: {chunk_count}")
+                print(f"   - 总字符数: {len(full_response_text)}")
+                print(f"   - 总字数: {len(full_response_text.replace(' ', ''))}")
+                print(f"👤 用户输入:")
+                print(f"   {user_text}")
+                print(f"🤖 LLM 完整回复:")
+                # 按行显示，更易读
+                if len(full_response_text) <= 500:
+                    print(f"   {full_response_text}")
+                else:
+                    print(f"   {full_response_text[:500]}...")
+                    print(f"   [... 省略 {len(full_response_text) - 500} 字符 ...]")
+                print("=" * 80 + "\n")
                 
                 # 发送结束标记
                 await websocket.send_json({"type": "end"})

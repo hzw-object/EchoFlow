@@ -17,15 +17,28 @@ class Config:
     OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY")
     OPENAI_BASE_URL: Optional[str] = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
     LLM_MODEL: str = os.getenv("LLM_MODEL", "gpt-3.5-turbo")
-    LLM_TEMPERATURE: float = float(os.getenv("LLM_TEMPERATURE", "0.9"))  # 提高温度，使回答更自然、有变化
-    LLM_MAX_TOKENS: int = int(os.getenv("LLM_MAX_TOKENS", "2000"))
+    LLM_TEMPERATURE: float = float(os.getenv("LLM_TEMPERATURE", "0.8"))  # 温度（更高=更随机，推荐 0.7-0.9）
+    LLM_MAX_TOKENS: int = int(os.getenv("LLM_MAX_TOKENS", "4000"))  # 最大生成 token 数（支持长文案）
     LLM_SYSTEM_PROMPT: str = os.getenv(
         "LLM_SYSTEM_PROMPT",
-        "你是一个真实、自然的朋友，用口语化的方式聊天。"
-        "回答要有人情味：可以用'嗯'、'啊'、'哦'等语气词，适当使用'呢'、'吧'、'呀'等助词。"
-        "语速自然，3-5句话，避免书面语和官方腔调。"
-        "可以适当使用感叹号、问号表达情感，但不要过度。"
-        "像真实的人在思考、停顿、组织语言，让对话更自然流畅。"
+        "你是一个专业且友好的AI助手，擅长生成详细、结构清晰的长文案和回答。\n\n"
+        "回答风格：\n"
+        "- 根据问题需求调整回答长度：简单问题简短回答，复杂问题详细展开\n"
+        "- 对于需要详细解释的问题，可以生成较长的文案（500-2000字）\n"
+        "- 使用清晰的结构：分段、要点、层次分明\n"
+        "- 语言自然流畅，既专业又易懂\n"
+        "- 适当使用例子、类比来帮助理解\n\n"
+        "长文案生成要点：\n"
+        "- 开头简明扼要，点明主题\n"
+        "- 中间逐步展开，层次清晰\n"
+        "- 结尾总结要点，给出建议\n"
+        "- 使用过渡词和连接词，确保连贯性\n"
+        "- 避免重复啰嗦，保持信息密度\n\n"
+        "语音播报优化：\n"
+        "- 句子长度适中（10-30字），避免过长\n"
+        "- 适当停顿，使用标点符号（。！？）分隔\n"
+        "- 避免使用特殊符号和表情符号\n"
+        "- 数字用中文表达（如'三个'而非'3个'）"
     )
     
     # DeepSeek 配置（如果使用 DeepSeek）
@@ -65,8 +78,14 @@ class Config:
     PIPER_USE_GPU: bool = os.getenv("PIPER_USE_GPU", "false").lower() == "true"  # 是否使用 GPU
     PIPER_SAMPLE_RATE: int = int(os.getenv("PIPER_SAMPLE_RATE", "22050"))  # 采样率
     
+    # CosyVoice 配置（阿里巴巴通义实验室，最佳音质，超低延迟）
+    COSYVOICE_MODEL_DIR: str = os.getenv("COSYVOICE_MODEL_DIR", "CosyVoice-300M-SFT")  # 模型目录
+    COSYVOICE_USE_GPU: bool = os.getenv("COSYVOICE_USE_GPU", "true").lower() == "true"  # 是否使用 GPU（推荐）
+    COSYVOICE_SAMPLE_RATE: int = int(os.getenv("COSYVOICE_SAMPLE_RATE", "22050"))  # 采样率
+    COSYVOICE_SPEAKER: str = os.getenv("COSYVOICE_SPEAKER", "中文女")  # 说话人（可选：中文女、中文男等）
+    
     # TTS 引擎选择
-    TTS_ENGINE: str = os.getenv("TTS_ENGINE", "piper")  # 可选: "piper", "edge", "coqui"
+    TTS_ENGINE: str = os.getenv("TTS_ENGINE", "cosyvoice")  # 可选: "cosyvoice", "edge", "piper", "coqui"
 
 
 config = Config()

@@ -2,6 +2,19 @@
 RealtimeTTS 实时语音合成模块
 每生成一小段文本就立即转换为音频
 """
+import sys
+import os
+
+# 添加 CosyVoice 和 Matcha-TTS 路径
+script_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(script_dir)
+cosyvoice_path = os.path.join(project_root, 'CosyVoice')
+matcha_path = os.path.join(project_root, 'CosyVoice', 'third_party', 'Matcha-TTS')
+if os.path.exists(cosyvoice_path) and cosyvoice_path not in sys.path:
+    sys.path.insert(0, cosyvoice_path)
+if os.path.exists(matcha_path) and matcha_path not in sys.path:
+    sys.path.insert(0, matcha_path)
+
 import asyncio
 import logging
 import io
@@ -862,4 +875,233 @@ class PiperTTSRealtime(RealtimeTTS):
             return self._synthesize_sync_onnx(text)
         else:
             return self._synthesize_sync_command(text)
+
+
+# 使用 CosyVoice 的本地实现（阿里巴巴通义实验室，最佳音质，超低延迟）
+class CosyVoiceRealtime(RealtimeTTS):
+    """使用 CosyVoice 的本地实时语音合成（阿里巴巴通义实验室，最佳音质）"""
+    
+    def __init__(
+        self,
+        model_dir: str = "CosyVoice-300M-SFT",
+        sample_rate: int = 22050,
+        use_gpu: bool = True,
+        speaker: str = "中文女",
+    ):
+        """
+        初始化 CosyVoice
+        
+        Args:
+            model_dir: 模型目录（相对或绝对路径）
+            sample_rate: 采样率（CosyVoice 默认 22050）
+            use_gpu: 是否使用 GPU
+            speaker: 说话人（如 "中文女"、"中文男" 等）
+        """
+        self.model_dir = model_dir
+        self.sample_rate = sample_rate
+        self.use_gpu = use_gpu
+        self.speaker = speaker
+        self.cosyvoice = None
+        self._synthesis_lock = None
+        
+        try:
+            from cosyvoice.cli.cosyvoice import CosyVoice
+            COSYVOICE_AVAILABLE = True
+        except ImportError:
+            COSYVOICE_AVAILABLE = False
+            logger.warning("CosyVoice 未安装，请参考文档安装")
+        
+        if COSYVOICE_AVAILABLE:
+            try:
+                import os
+                # 检查模型路径
+                if not os.path.isabs(model_dir):
+                    # 相对路径，尝试在 pretrained_models 目录下查找
+                    model_path = os.path.join("pretrained_models", model_dir)
+                    if not os.path.exists(model_path):
+                        logger.warning(f"模型目录不存在: {model_path}，尝试使用原路径")
+                        model_path = model_dir
+                else:
+                    model_path = model_dir
+                
+                logger.info(f"正在加载 CosyVoice 模型: {model_path}")
+                self.cosyvoice = CosyVoice(model_path)
+                logger.info(f"CosyVoice 初始化完成: model={model_path}, sample_rate={sample_rate}, gpu={use_gpu}")
+            except Exception as e:
+                logger.error(f"CosyVoice 模型加载失败: {e}")
+                import traceback
+                logger.debug(f"详细错误: {traceback.format_exc()}")
+                self.cosyvoice = None
+        else:
+            logger.warning("CosyVoice 未安装，将使用模拟模式")
+        
+        super().__init__()
+    
+    async def synthesize_stream(self, text: str) -> AsyncGenerator[bytes, None]:
+        """
+        流式合成语音（CosyVoice 高质量合成）
+        
+        Args:
+            text: 待合成的文本
+            
+        Yields:
+            audio_chunk: 音频数据块（bytes）
+        """
+        if not text or not text.strip():
+            logger.debug("❌ CosyVoice 收到空文本，跳过")
+            return
+        
+        logger.info(f"🎤 CosyVoice 开始合成: [{text[:30]}...] 长度={len(text)}")
+        
+        try:
+            # 预处理文本
+            processed_text = self._preprocess_text(text)
+            
+            if not processed_text:
+                logger.warning(f"⚠️ 文本预处理后为空，跳过: {text[:50]}")
+                return
+            
+            # 初始化锁（如果还没有）
+            if self._synthesis_lock is None:
+                self._synthesis_lock = asyncio.Lock()
+            
+            # 使用锁保护，防止并发访问
+            logger.debug(f"🔒 等待获取合成锁...")
+            async with self._synthesis_lock:
+                logger.debug(f"✅ 获取合成锁，开始合成: {processed_text[:50]}...")
+                loop = asyncio.get_event_loop()
+                audio_data = await loop.run_in_executor(
+                    None,
+                    self._synthesize_sync_cosyvoice,
+                    processed_text
+                )
+                
+                logger.info(f"✅ CosyVoice 合成完成，音频长度: {len(audio_data) / self.sample_rate:.2f}秒")
+                
+                # 将音频数据转换为 WAV 格式
+                wav_data = self._float32_to_wav(audio_data)
+                logger.info(f"📦 WAV 数据大小: {len(wav_data)} 字节")
+            
+            # 在锁外发送音频块
+            # 分块发送（每块约 0.5-1 秒，降低延迟）
+            chunk_size = self.sample_rate * 1 * 2  # 16-bit = 2 bytes per sample, 1秒
+            chunk_count = 0
+            for i in range(0, len(wav_data), chunk_size):
+                chunk = wav_data[i:i + chunk_size]
+                if chunk:
+                    chunk_count += 1
+                    logger.debug(f"📤 发送音频块 #{chunk_count}: {len(chunk)} 字节")
+                    yield chunk
+                    # CosyVoice 合成需要一些时间，不需要额外延迟
+                    await asyncio.sleep(0.01)
+            
+            logger.info(f"✅ 音频发送完成，共 {chunk_count} 个块，总计 {len(wav_data)} 字节")
+                    
+        except Exception as e:
+            logger.error(f"❌ CosyVoice 合成错误: {e}")
+            import traceback
+            logger.error(f"详细错误: {traceback.format_exc()}")
+            # 生成静音作为后备
+            logger.warning("⚠️ 返回静音作为后备")
+            async for chunk in self._generate_silence(len(text)):
+                yield chunk
+    
+    def _preprocess_text(self, text: str) -> str:
+        """
+        预处理文本
+        
+        Args:
+            text: 原始文本
+            
+        Returns:
+            处理后的文本
+        """
+        import re
+        
+        if not text or not text.strip():
+            return ""
+        
+        # 移除多余的空格和换行
+        text = re.sub(r'\s+', ' ', text).strip()
+        
+        return text
+    
+    def _synthesize_sync_cosyvoice(self, text: str) -> np.ndarray:
+        """
+        使用 CosyVoice 同步合成语音
+        
+        Args:
+            text: 待合成的文本
+            
+        Returns:
+            audio_data: 音频数据（numpy array）
+        """
+        if self.cosyvoice is None:
+            logger.warning("CosyVoice 未初始化，返回静音")
+            return np.zeros(int(self.sample_rate * 0.5), dtype=np.float32)
+        
+        try:
+            logger.debug(f"CosyVoice 合成文本: {text[:50]}...")
+            
+            # 使用 CosyVoice inference_sft 方法合成语音
+            # inference_sft 用于单说话人合成（SFT = Speaker Fine-Tuning）
+            # CosyVoice 返回生成器，需要迭代获取结果
+            output_generator = self.cosyvoice.inference_sft(text, self.speaker)
+            
+            # 从生成器中获取音频数据
+            audio_chunks = []
+            for output in output_generator:
+                if isinstance(output, dict) and 'tts_speech' in output:
+                    audio_chunks.append(output['tts_speech'])
+                else:
+                    audio_chunks.append(output)
+            
+            # 合并所有音频块
+            if not audio_chunks:
+                raise ValueError("未生成音频数据")
+            
+            # 如果只有一个块，直接使用
+            if len(audio_chunks) == 1:
+                audio_tensor = audio_chunks[0]
+            else:
+                # 合并多个音频块
+                import torch
+                audio_tensor = torch.cat(audio_chunks, dim=-1)
+            
+            # 转换为 numpy array
+            if hasattr(audio_tensor, 'cpu'):
+                # PyTorch tensor
+                audio_data = audio_tensor.cpu().numpy()
+            elif hasattr(audio_tensor, 'numpy'):
+                # 其他 tensor 类型
+                audio_data = audio_tensor.numpy()
+            else:
+                # 已经是 numpy array
+                audio_data = np.array(audio_tensor)
+            
+            # 确保是 float32 格式
+            if audio_data.dtype != np.float32:
+                audio_data = audio_data.astype(np.float32)
+            
+            # 归一化到 [-1, 1] 范围
+            if audio_data.max() > 1.0 or audio_data.min() < -1.0:
+                audio_data = audio_data / (np.abs(audio_data).max() + 1e-8)
+            
+            # 如果是多维数组，展平为一维
+            if len(audio_data.shape) > 1:
+                audio_data = audio_data.flatten()
+            
+            logger.debug(f"CosyVoice 合成完成，音频长度: {len(audio_data) / self.sample_rate:.2f}秒")
+            return audio_data
+            
+        except Exception as e:
+            logger.error(f"CosyVoice 合成失败: {e}")
+            import traceback
+            logger.error(f"详细错误: {traceback.format_exc()}")
+            # 返回短暂静音
+            return np.zeros(int(self.sample_rate * 0.5), dtype=np.float32)
+    
+    def _synthesize_sync(self, text: str) -> np.ndarray:
+        """同步合成语音（兼容接口）"""
+        return self._synthesize_sync_cosyvoice(text)
 
